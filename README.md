@@ -352,8 +352,4 @@ The project demonstrates:
 
 ---
 
-## 16. Author
 
-**Chetany Kalaneya**
-
-Artificial Intelligence / Machine Learning Enthusiast
