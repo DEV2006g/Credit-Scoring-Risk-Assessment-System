@@ -1,0 +1,227 @@
+{% extends "layout.html" %}
+
+{% block title %}Batch Applicant Evaluation & Portfolio Scoring{% endblock %}
+
+{% block content %}
+<div class="container page-container">
+    
+    <div class="page-header flex-between">
+        <div>
+            <h1 class="page-title"><i class="fa-solid fa-file-csv"></i> Batch Portfolio Credit Evaluation</h1>
+            <p class="page-desc">Process multiple credit applications concurrently, generating automated FICO credit scores, risk tier rankings, and primary justification flags.</p>
+        </div>
+        <div>
+            <a href="/api/sample-csv" class="btn btn-outline-info">
+                <i class="fa-solid fa-download"></i> Download Sample CSV Template
+            </a>
+        </div>
+    </div>
+
+    <!-- Upload Box Card -->
+    <div class="card mb-4">
+        <div class="upload-dropzone" id="dropzone">
+            <input type="file" id="csvFileInput" accept=".csv" class="file-input-hidden">
+            <div class="dropzone-icon">
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+            </div>
+            <h3>Upload Applicant CSV File</h3>
+            <p class="dropzone-desc">Drag and drop your credit applicant records here, or click to browse.</p>
+            <button type="button" class="btn btn-primary" onclick="document.getElementById('csvFileInput').click();">
+                Select CSV File
+            </button>
+            <div id="fileSelectedInfo" class="mt-2 text-accent" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Batch Results Table -->
+    <div id="batchResultsCard" class="card" style="display: none;">
+        <div class="card-header flex-between">
+            <div>
+                <h3 class="card-title"><i class="fa-solid fa-table-list"></i> Portfolio Evaluation Results</h3>
+                <span class="card-subtitle" id="batchCountBadge">0 records scored</span>
+            </div>
+            <div class="flex-center gap-2">
+                <select id="tierFilter" class="form-control form-control-sm" style="width: 160px;">
+                    <option value="ALL">All Risk Tiers</option>
+                    <option value="Excellent">Excellent</option>
+                    <option value="Good">Good</option>
+                    <option value="Fair">Fair</option>
+                    <option value="Poor">Poor</option>
+                    <option value="Very Poor">Very Poor</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-success" id="exportScoredCsvBtn">
+                    <i class="fa-solid fa-file-export"></i> Export Scored CSV
+                </button>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="data-table" id="batchTable">
+                <thead>
+                    <tr>
+                        <th>Applicant ID</th>
+                        <th>Credit Score</th>
+                        <th>Risk Tier</th>
+                        <th>Default Probability</th>
+                        <th>Decision</th>
+                        <th>Requested Principal</th>
+                        <th>Tenure</th>
+                        <th>Primary Enhancer</th>
+                        <th>Primary Risk Flag</th>
+                    </tr>
+                </thead>
+                <tbody id="batchTableBody">
+                    <!-- Populated dynamically -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentBatchRecords = [];
+
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('csvFileInput');
+    const fileInfo = document.getElementById('fileSelectedInfo');
+    const resultsCard = document.getElementById('batchResultsCard');
+    const tableBody = document.getElementById('batchTableBody');
+    const countBadge = document.getElementById('batchCountBadge');
+    const tierFilter = document.getElementById('tierFilter');
+    const exportBtn = document.getElementById('exportScoredCsvBtn');
+
+    // Drag & drop handlers
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            dropzone.classList.add('drag-active');
+        }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('drag-active');
+        }, false);
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length > 0) {
+            handleFileUpload(files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFileUpload(e.target.files[0]);
+        }
+    });
+
+    function handleFileUpload(file) {
+        if (!file.name.endsWith('.csv')) {
+            alert('Please select a valid CSV file.');
+            return;
+        }
+
+        fileInfo.style.display = 'block';
+        fileInfo.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Processing <strong>${file.name}</strong> (${(file.size / 1024).toFixed(1)} KB)...`;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        fetch('/api/batch-score', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                fileInfo.innerHTML = `<span class="text-danger"><i class="fa-solid fa-circle-exclamation"></i> ${data.error}</span>`;
+                return;
+            }
+
+            currentBatchRecords = data.records;
+            fileInfo.innerHTML = `<span class="text-success"><i class="fa-solid fa-circle-check"></i> Scored ${data.count} applicants successfully!</span>`;
+            countBadge.textContent = `${data.count} applications analyzed`;
+            resultsCard.style.display = 'block';
+            renderTable(currentBatchRecords);
+        })
+        .catch(err => {
+            fileInfo.innerHTML = `<span class="text-danger">Network error during upload: ${err.message}</span>`;
+        });
+    }
+
+    function renderTable(records) {
+        const selectedTier = tierFilter.value;
+        const filtered = selectedTier === 'ALL' ? records : records.filter(r => r.risk_tier === selectedTier);
+
+        tableBody.innerHTML = '';
+        if (filtered.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">No applications match the selected filter.</td></tr>`;
+            return;
+        }
+
+        filtered.forEach(r => {
+            const badgeClass = r.risk_tier === 'Excellent' ? 'badge-success' :
+                               r.risk_tier === 'Good' ? 'badge-info' :
+                               r.risk_tier === 'Fair' ? 'badge-warning' :
+                               r.risk_tier === 'Poor' ? 'badge-orange' : 'badge-danger';
+
+            const decisionBadge = r.decision.includes('Approved') ? 'text-success' :
+                                  r.decision.includes('Conditional') ? 'text-warning' : 'text-danger';
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><strong>${r.applicant_id}</strong></td>
+                <td><strong style="color: ${r.color}; font-size: 1.05rem;">${r.credit_score}</strong></td>
+                <td><span class="badge ${badgeClass}">${r.risk_tier}</span></td>
+                <td>${r.default_probability}%</td>
+                <td><strong class="${decisionBadge}">${r.decision}</strong></td>
+                <td>${r.credit_amount.toLocaleString()} DM</td>
+                <td>${r.duration} Mo</td>
+                <td><small class="text-success"><i class="fa-solid fa-check"></i> ${r.primary_driver}</small></td>
+                <td><small class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> ${r.primary_risk_flag}</small></td>
+            `;
+            tableBody.appendChild(row);
+        });
+    }
+
+    tierFilter.addEventListener('change', () => {
+        renderTable(currentBatchRecords);
+    });
+
+    exportBtn.addEventListener('click', () => {
+        if (currentBatchRecords.length === 0) return;
+
+        const headers = ['Applicant ID', 'Credit Score', 'Risk Tier', 'Default Probability (%)', 'Decision', 'Credit Amount (DM)', 'Duration (Months)', 'Primary Enhancer', 'Primary Risk Flag'];
+        const csvRows = [headers.join(',')];
+
+        currentBatchRecords.forEach(r => {
+            csvRows.push([
+                `"${r.applicant_id}"`,
+                r.credit_score,
+                `"${r.risk_tier}"`,
+                r.default_probability,
+                `"${r.decision}"`,
+                r.credit_amount,
+                r.duration,
+                `"${r.primary_driver.replace(/"/g, '""')}"`,
+                `"${r.primary_risk_flag.replace(/"/g, '""')}"`
+            ].join(','));
+        });
+
+        const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `scored_credit_portfolio_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+    });
+</script>
+{% endblock %}

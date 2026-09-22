@@ -1,0 +1,350 @@
+{% extends "layout.html" %}
+
+{% block title %}Model Evaluation & Financial Cost Matrix Analysis{% endblock %}
+
+{% block head %}
+<!-- Chart.js CDN for dynamic financial charts -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container page-container">
+    
+    <div class="page-header flex-between">
+        <div>
+            <h1 class="page-title"><i class="fa-solid fa-chart-column"></i> Model Benchmarking & Cost-Sensitive Optimization</h1>
+            <p class="page-desc">Comprehensive comparative analytics of machine learning classifiers evaluated on the German Credit Dataset under the official 5:1 asymmetric loss matrix.</p>
+        </div>
+        <div>
+            <span class="badge badge-accent badge-lg">
+                <i class="fa-solid fa-trophy"></i> Champion Model: {{ champion_name }}
+            </span>
+        </div>
+    </div>
+
+    <!-- Model Comparison Leaderboard -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h3 class="card-title"><i class="fa-solid fa-list-ol"></i> Classifier Performance Leaderboard (5-Fold Stratified CV & Test Set)</h3>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Algorithm</th>
+                        <th>CV ROC-AUC</th>
+                        <th>Test ROC-AUC</th>
+                        <th>Accuracy</th>
+                        <th>Recall (Default)</th>
+                        <th>F1-Score</th>
+                        <th>Specificity</th>
+                        <th>Default Cost (0.5)</th>
+                        <th>Optimal Cost (&tau;*)</th>
+                        <th>Cost Savings</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for name, m in metrics['models'].items() %}
+                    <tr class="{% if name == champion_name %}highlight-row{% endif %}">
+                        <td>
+                            <strong>{{ name }}</strong>
+                            {% if name == champion_name %}<span class="badge badge-sm badge-success ml-2">Champion</span>{% endif %}
+                        </td>
+                        <td>{{ m['cv_roc_auc_mean'] }} <small class="text-muted">&plusmn;{{ m['cv_roc_auc_std'] }}</small></td>
+                        <td><strong class="text-accent">{{ (m['test_roc_auc'] * 100)|round(2) }}%</strong></td>
+                        <td>{{ (m['test_accuracy'] * 100)|round(1) }}%</td>
+                        <td><span class="badge badge-outline-success">{{ (m['test_recall'] * 100)|round(1) }}%</span></td>
+                        <td>{{ m['test_f1'] }}</td>
+                        <td>{{ (m['test_specificity'] * 100)|round(1) }}%</td>
+                        <td>{{ m['default_avg_cost'] }} DM</td>
+                        <td><strong class="text-success">{{ m['optimal_avg_cost'] }} DM (&tau;={{ m['optimal_threshold'] }})</strong></td>
+                        <td><span class="badge badge-sm badge-info">+{{ m['cost_reduction_pct'] }}%</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Asymmetric Cost Matrix Analysis Section -->
+    <div class="grid-2 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fa-solid fa-scale-unbalanced-flip"></i> Cost Matrix Penalty Specification</h3>
+                <p class="card-desc">Standard evaluation considers false alarms and misses equally. In credit risk, lending to a defaulting borrower (FN) inflicts catastrophic losses compared to denying a creditworthy borrower (FP).</p>
+            </div>
+            
+            <div class="cost-matrix-display">
+                <table class="cost-matrix-table">
+                    <thead>
+                        <tr>
+                            <th>Actual \ Predicted</th>
+                            <th>Predicted Good (0)</th>
+                            <th>Predicted Bad (1)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Actual Good (0)</strong></td>
+                            <td class="cell-zero">0 DM (True Neg)</td>
+                            <td class="cell-cost-low">1 DM (False Pos / Lost Opportunity)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Actual Bad (1)</strong></td>
+                            <td class="cell-cost-high">5 DM (False Neg / Loan Default Loss)</td>
+                            <td class="cell-zero">0 DM (True Pos / Avoided Loss)</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="cost-explanation mt-3">
+                <div class="alert alert-info">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <div>
+                        <strong>Financial Impact:</strong> By shifting from the arbitrary standard cutoff of <code>0.50</code> to the cost-optimized threshold <code>&tau;* = {{ metrics['models'][champion_name]['optimal_threshold'] }}</code>, the bank catches more default events early, cutting financial exposure per applicant significantly.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fa-solid fa-chart-area"></i> Threshold vs Financial Cost Curve</h3>
+                <p class="card-desc">Empirical total bank cost evaluated across decision cutoffs &tau; &in; [0.05, 0.95].</p>
+            </div>
+            <div class="chart-container">
+                <canvas id="costCurveChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row: ROC Curves & Feature Importance -->
+    <div class="grid-2 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fa-solid fa-chart-line"></i> ROC Discrimination Curve (Champion Model)</h3>
+                <p class="card-desc">Trade-off between True Positive Rate and False Positive Rate across classification thresholds.</p>
+            </div>
+            <div class="chart-container">
+                <canvas id="rocChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fa-solid fa-ranking-star"></i> Global Feature Importance Leaderboard</h3>
+                <p class="card-desc">Top predictive features extracted by the champion model influencing default likelihood.</p>
+            </div>
+            <div class="chart-container">
+                <canvas id="featureImpChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confusion Matrix Comparison -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title"><i class="fa-solid fa-table-cells-large"></i> Confusion Matrix Comparison (Test Set: 200 Applicants)</h3>
+            <p class="card-desc">Comparing classification outcomes between Default Cutoff (&tau;=0.50) and Optimal Cutoff (&tau;={{ metrics['models'][champion_name]['optimal_threshold'] }}).</p>
+        </div>
+        <div class="grid-2">
+            <div class="cm-card">
+                <h4 class="cm-title">Standard Threshold (&tau; = 0.50)</h4>
+                {% set def_cm = metrics['models'][champion_name]['default_cm'] %}
+                <div class="cm-grid">
+                    <div class="cm-cell cell-tn">
+                        <span class="cm-count">{{ def_cm['tn'] }}</span>
+                        <span class="cm-label">True Negative (Good Approved)</span>
+                    </div>
+                    <div class="cm-cell cell-fp">
+                        <span class="cm-count">{{ def_cm['fp'] }}</span>
+                        <span class="cm-label">False Positive (Good Denied) [Cost: {{ def_cm['fp'] * 1 }}]</span>
+                    </div>
+                    <div class="cm-cell cell-fn">
+                        <span class="cm-count">{{ def_cm['fn'] }}</span>
+                        <span class="cm-label">False Negative (Bad Approved) [Cost: {{ def_cm['fn'] * 5 }}]</span>
+                    </div>
+                    <div class="cm-cell cell-tp">
+                        <span class="cm-count">{{ def_cm['tp'] }}</span>
+                        <span class="cm-label">True Positive (Bad Detected)</span>
+                    </div>
+                </div>
+                <div class="cm-footer">
+                    Total Test Cost: <strong>{{ metrics['models'][champion_name]['default_avg_cost'] * 200 }} DM</strong> &bull; Avg Cost/Applicant: <strong>{{ metrics['models'][champion_name]['default_avg_cost'] }} DM</strong>
+                </div>
+            </div>
+
+            <div class="cm-card optimal-cm-card">
+                <h4 class="cm-title text-accent">Cost-Optimized Threshold (&tau;* = {{ metrics['models'][champion_name]['optimal_threshold'] }})</h4>
+                {% set opt_cm = metrics['models'][champion_name]['optimal_cm'] %}
+                <div class="cm-grid">
+                    <div class="cm-cell cell-tn">
+                        <span class="cm-count">{{ opt_cm['tn'] }}</span>
+                        <span class="cm-label">True Negative (Good Approved)</span>
+                    </div>
+                    <div class="cm-cell cell-fp">
+                        <span class="cm-count">{{ opt_cm['fp'] }}</span>
+                        <span class="cm-label">False Positive (Good Denied) [Cost: {{ opt_cm['fp'] * 1 }}]</span>
+                    </div>
+                    <div class="cm-cell cell-fn">
+                        <span class="cm-count">{{ opt_cm['fn'] }}</span>
+                        <span class="cm-label">False Negative (Bad Approved) [Cost: {{ opt_cm['fn'] * 5 }}]</span>
+                    </div>
+                    <div class="cm-cell cell-tp">
+                        <span class="cm-count">{{ opt_cm['tp'] }}</span>
+                        <span class="cm-label">True Positive (Bad Detected)</span>
+                    </div>
+                </div>
+                <div class="cm-footer text-success">
+                    Total Test Cost: <strong>{{ (metrics['models'][champion_name]['optimal_avg_cost'] * 200)|round(1) }} DM</strong> &bull; Avg Cost/Applicant: <strong>{{ metrics['models'][champion_name]['optimal_avg_cost'] }} DM</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Load chart data directly from backend
+    const championModelName = {{ champion_name | tojson }};
+    const metricsData = {{ metrics | tojson }};
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        const champ = metricsData.models[championModelName];
+        if (!champ) return;
+
+        // 1. Cost Curve Chart
+        const costCtx = document.getElementById('costCurveChart').getContext('2d');
+        const costCurveData = champ.cost_curve || [];
+        new Chart(costCtx, {
+            type: 'line',
+            data: {
+                labels: costCurveData.map(d => d.threshold),
+                datasets: [{
+                    label: 'Expected Loss / Applicant (DM)',
+                    data: costCurveData.map(d => d.cost),
+                    borderColor: '#3B82F6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 1,
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: '#94A3B8' } },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) { return `Threshold: ${ctx.label} | Cost: ${ctx.raw} DM`; }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        title: { display: true, text: 'Decision Cutoff Threshold (τ)', color: '#94A3B8' },
+                        ticks: { color: '#94A3B8', maxTicksLimit: 10 },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    },
+                    y: {
+                        title: { display: true, text: 'Cost per Applicant (DM)', color: '#94A3B8' },
+                        ticks: { color: '#94A3B8' },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    }
+                }
+            }
+        });
+
+        // 2. ROC Curve Chart
+        const rocCtx = document.getElementById('rocChart').getContext('2d');
+        const rocPoints = champ.roc_curve || [];
+        new Chart(rocCtx, {
+            type: 'line',
+            data: {
+                datasets: [
+                    {
+                        label: `${championModelName} (AUC = ${(champ.test_roc_auc * 100).toFixed(1)}%)`,
+                        data: rocPoints.map(p => ({ x: p.fpr, y: p.tpr })),
+                        borderColor: '#10B981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                        borderWidth: 2.5,
+                        fill: true,
+                        tension: 0.2
+                    },
+                    {
+                        label: 'Random Baseline (AUC = 50%)',
+                        data: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+                        borderColor: '#64748B',
+                        borderDash: [5, 5],
+                        borderWidth: 1.5,
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#94A3B8' } } },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        min: 0,
+                        max: 1,
+                        title: { display: true, text: 'False Positive Rate (1 - Specificity)', color: '#94A3B8' },
+                        ticks: { color: '#94A3B8' },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    },
+                    y: {
+                        type: 'linear',
+                        min: 0,
+                        max: 1,
+                        title: { display: true, text: 'True Positive Rate (Recall)', color: '#94A3B8' },
+                        ticks: { color: '#94A3B8' },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    }
+                }
+            }
+        });
+
+        // 3. Feature Importance Leaderboard
+        const featCtx = document.getElementById('featureImpChart').getContext('2d');
+        const topFeats = champ.top_features || {};
+        const featNames = Object.keys(topFeats).slice(0, 10);
+        const featVals = featNames.map(k => topFeats[k]);
+
+        new Chart(featCtx, {
+            type: 'bar',
+            data: {
+                labels: featNames,
+                datasets: [{
+                    label: 'Relative Weight / Importance',
+                    data: featVals,
+                    backgroundColor: '#6366F1',
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: {
+                        ticks: { color: '#94A3B8' },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    },
+                    y: {
+                        ticks: { color: '#E2E8F0', font: { size: 11 } },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %}

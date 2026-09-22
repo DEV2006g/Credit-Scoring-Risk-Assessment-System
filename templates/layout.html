@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Credit Scoring & Risk Assessment System{% endblock %} | AI Financial Intelligence</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body class="bg-dark">
+    <!-- Navigation Bar -->
+    <header class="navbar-wrapper">
+        <div class="container navbar-container">
+            <a href="/" class="brand-logo">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-title">CreditScore<span class="text-accent">AI</span></span>
+                    <span class="brand-subtitle">Risk Assessment & Decision Justification Engine</span>
+                </div>
+            </a>
+            
+            <nav class="nav-links">
+                <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">
+                    <i class="fa-solid fa-gauge-high"></i> Risk Assessor
+                </a>
+                <a href="/models" class="nav-link {% if request.path == '/models' %}active{% endif %}">
+                    <i class="fa-solid fa-chart-line"></i> Model Performance
+                </a>
+                <a href="/batch" class="nav-link {% if request.path == '/batch' %}active{% endif %}">
+                    <i class="fa-solid fa-file-csv"></i> Batch Evaluation
+                </a>
+            </nav>
+
+            <div class="nav-status">
+                <span class="status-indicator online"></span>
+                <span class="status-text">Engine Online (Cost-Sensitive 5:1)</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer-wrapper">
+        <div class="container footer-content">
+            <div class="footer-left">
+                <p><strong>Credit Scoring & Risk Assessment System</strong> &bull; German Credit Dataset ML Architecture</p>
+                <p class="footer-muted">Equipped with Scikit-learn, Asymmetric Cost-Sensitive Optimization, and Transparent Decision Justification.</p>
+            </div>
+            <div class="footer-right">
+                <span class="badge badge-outline"><i class="fa-solid fa-lock"></i> Basel III Compliant Scorecard Logic</span>
+                <span class="badge badge-outline"><i class="fa-solid fa-scale-balanced"></i> Fair Lending Explainability</span>
+            </div>
+        </div>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

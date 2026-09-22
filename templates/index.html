@@ -1,0 +1,437 @@
+{% extends "layout.html" %}
+
+{% block title %}Applicant Risk Assessor & Decision Justification{% endblock %}
+
+{% block content %}
+<div class="container page-container">
+
+    <!-- Top KPI Bar -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-brain"></i></div>
+            <div class="kpi-data">
+                <span class="kpi-label">Champion ML Model</span>
+                <span class="kpi-value text-accent">{{ champion_name }}</span>
+            </div>
+            <span class="kpi-tag">ROC-AUC: {{ (champion_roc * 100)|round(1) }}%</span>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-bullseye"></i></div>
+            <div class="kpi-data">
+                <span class="kpi-label">Default Recall Sensitivity</span>
+                <span class="kpi-value text-success">{{ (champion_recall * 100)|round(1) }}%</span>
+            </div>
+            <span class="kpi-tag">Defaulters Caught</span>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-scale-balanced"></i></div>
+            <div class="kpi-data">
+                <span class="kpi-label">Cost Penalty Matrix</span>
+                <span class="kpi-value text-warning">5 : 1 Ratio</span>
+            </div>
+            <span class="kpi-tag">FN Cost (5) vs FP Cost (1)</span>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-sliders"></i></div>
+            <div class="kpi-data">
+                <span class="kpi-label">Optimal Cost Cutoff (&tau;*)</span>
+                <span class="kpi-value text-info">{{ optimal_threshold }}</span>
+            </div>
+            <span class="kpi-tag">Minimizes Bank Loss</span>
+        </div>
+    </div>
+
+    <!-- Main Workspace Split: Left Form, Right Results -->
+    <div class="assessment-layout">
+        
+        <!-- Left Column: Application Input -->
+        <div class="form-column">
+            <div class="card form-card">
+                <div class="card-header flex-between">
+                    <div>
+                        <h2 class="card-title"><i class="fa-solid fa-file-invoice-dollar"></i> Loan Applicant Profile</h2>
+                        <p class="card-desc">Enter demographic and financial data to evaluate credit risk and score.</p>
+                    </div>
+                    <!-- Presets Selector -->
+                    <div class="preset-group">
+                        <span class="preset-label">Load Presets:</span>
+                        <button type="button" class="btn btn-sm btn-outline-success" id="presetPrimeBtn" title="Load High-Creditworthiness Profile">
+                            <i class="fa-solid fa-star"></i> Prime
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-warning" id="presetFairBtn" title="Load Borderline Profile">
+                            <i class="fa-solid fa-scale-balanced"></i> Fair
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="presetSubprimeBtn" title="Load High-Risk Profile">
+                            <i class="fa-solid fa-triangle-exclamation"></i> Subprime
+                        </button>
+                    </div>
+                </div>
+
+                <form id="creditForm" class="credit-form">
+                    
+                    <!-- Section 1: Financial & Account Status -->
+                    <div class="form-section">
+                        <div class="section-title">
+                            <i class="fa-solid fa-wallet"></i> Account & Liquidity Status
+                        </div>
+                        <div class="form-grid-2">
+                            <div class="form-group">
+                                <label for="checking_status">Checking Account Status <span class="req">*</span></label>
+                                <select id="checking_status" name="checking_status" class="form-control" required>
+                                    {% for code, label in descriptions['checking_status'].items() %}
+                                    <option value="{{ code }}" {% if code == 'A14' %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="savings_status">Savings Account / Bonds <span class="req">*</span></label>
+                                <select id="savings_status" name="savings_status" class="form-control" required>
+                                    {% for code, label in descriptions['savings_status'].items() %}
+                                    <option value="{{ code }}" {% if code == 'A61' %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="existing_credits">Existing Credits at this Bank</label>
+                                <input type="number" id="existing_credits" name="existing_credits" class="form-control" min="1" max="4" value="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="credit_history">Past Credit History <span class="req">*</span></label>
+                                <select id="credit_history" name="credit_history" class="form-control" required>
+                                    {% for code, label in descriptions['credit_history'].items() %}
+                                    <option value="{{ code }}" {% if code == 'A32' %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 2: Loan Particulars -->
+                    <div class="form-section">
+                        <div class="section-title">
+                            <i class="fa-solid fa-coins"></i> Loan Request Specifications
+                        </div>
+                        <div class="form-grid-2">
+                            <div class="form-group">
+                                <label for="credit_amount">Requested Credit Amount (DM) <span class="req">*</span></label>
+                                <div class="input-addon">
+                                    <span class="addon-text">DM</span>
+                                    <input type="number" id="credit_amount" name="credit_amount" class="form-control" min="250" max="20000" step="50" value="3000" required>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="duration">Loan Duration (Months) <span class="req">*</span></label>
+                                <div class="input-addon">
+                                    <input type="number" id="duration" name="duration" class="form-control" min="4" max="72" value="24" required>
+                                    <span class="addon-text">Mo</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="installment_rate">Installment Rate (% of Disposable Income) <span class="req">*</span></label>
+                                <select id="installment_rate" name="installment_rate" class="form-control" required>
+                                    <option value="1">1% (Very Low Burden)</option>
+                                    <option value="2">2% (Moderate)</option>
+                                    <option value="3" selected>3% (Substantial)</option>
+                                    <option value="4">4% (Heavy Burden)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="purpose">Loan Purpose <span class="req">*</span></label>
+                                <select id="purpose" name="purpose" class="form-control" required>
+                                    {% for code, label in descriptions['purpose'].items() %}
+                                    <option value="{{ code }}" {% if code == 'A40' %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 3: Demographic & Employment Profile -->
+                    <div class="form-section">
+                        <div class="section-title">
+                            <i class="fa-solid fa-user-tie"></i> Employment & Demographics
+                        </div>
+                        <div class="form-grid-3">
+                            <div class="form-group">
+                                <label for="age">Age (Years) <span class="req">*</span></label>
+                                <input type="number" id="age" name="age" class="form-control" min="18" max="75" value="35" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="employment">Present Employment <span class="req">*</span></label>
+                                <select id="employment" name="employment" class="form-control" required>
+                                    {% for code, label in descriptions['employment'].items() %}
+                                    <option value="{{ code }}" {% if code == 'A73' %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="job">Job Category <span class="req">*</span></label>
+                                <select id="job" name="job" class="form-control" required>
+                                    {% for code, label in descriptions['job'].items() %}
+                                    <option value="{{ code }}" {% if code == 'A173' %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="personal_status">Personal Status & Sex</label>
+                                <select id="personal_status" name="personal_status" class="form-control">
+                                    {% for code, label in descriptions['personal_status'].items() %}
+                                    <option value="{{ code }}" {% if code == 'A93' %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="residence_since">Residence Tenure (Years)</label>
+                                <input type="number" id="residence_since" name="residence_since" class="form-control" min="1" max="4" value="2" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="num_dependents">Dependents Maintained</label>
+                                <input type="number" id="num_dependents" name="num_dependents" class="form-control" min="1" max="2" value="1" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 4: Collateral, Housing & Guarantees -->
+                    <div class="form-section">
+                        <div class="section-title">
+                            <i class="fa-solid fa-house-chimney"></i> Assets, Collateral & Guarantees
+                        </div>
+                        <div class="form-grid-3">
+                            <div class="form-group">
+                                <label for="property_magnitude">Property Assets <span class="req">*</span></label>
+                                <select id="property_magnitude" name="property_magnitude" class="form-control" required>
+                                    {% for code, label in descriptions['property_magnitude'].items() %}
+                                    <option value="{{ code }}" {% if code == 'A122' %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="housing">Housing Status <span class="req">*</span></label>
+                                <select id="housing" name="housing" class="form-control" required>
+                                    {% for code, label in descriptions['housing'].items() %}
+                                    <option value="{{ code }}" {% if code == 'A152' %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="other_parties">Other Parties / Guarantors</label>
+                                <select id="other_parties" name="other_parties" class="form-control">
+                                    {% for code, label in descriptions['other_parties'].items() %}
+                                    <option value="{{ code }}" {% if code == 'A101' %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="other_payment_plans">Other Installment Plans</label>
+                                <select id="other_payment_plans" name="other_payment_plans" class="form-control">
+                                    {% for code, label in descriptions['other_payment_plans'].items() %}
+                                    <option value="{{ code }}" {% if code == 'A143' %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="own_telephone">Registered Telephone</label>
+                                <select id="own_telephone" name="own_telephone" class="form-control">
+                                    <option value="A191">None</option>
+                                    <option value="A192" selected>Yes (Under customer name)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="foreign_worker">Foreign Worker Status</label>
+                                <select id="foreign_worker" name="foreign_worker" class="form-control">
+                                    <option value="A201" selected>Yes</option>
+                                    <option value="A202">No</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary btn-lg btn-block" id="submitScoreBtn">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Compute Credit Score & Evaluate Risk
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Right Column: Interactive Scorecard & Justification -->
+        <div class="results-column">
+            
+            <!-- Result Placeholder / Initial State -->
+            <div id="initialState" class="card result-card empty-state">
+                <div class="empty-icon"><i class="fa-solid fa-chart-pie"></i></div>
+                <h3>Applicant Ready for Underwriting</h3>
+                <p>Select a quick preset profile or fill in the application form and click <strong>"Compute Credit Score"</strong> to assess creditworthiness.</p>
+                <div class="preset-shortcuts">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('presetPrimeBtn').click(); document.getElementById('submitScoreBtn').click();">
+                        Try Prime Profile
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('presetSubprimeBtn').click(); document.getElementById('submitScoreBtn').click();">
+                        Try Subprime Profile
+                    </button>
+                </div>
+            </div>
+
+            <!-- Active Scorecard Result Card -->
+            <div id="resultCard" class="card result-card" style="display: none;">
+                <div class="card-header flex-between">
+                    <div>
+                        <h2 class="card-title"><i class="fa-solid fa-id-card-clip"></i> Credit Assessment Outcome</h2>
+                        <span class="card-subtitle" id="decisionTimestamp">Generated in real-time</span>
+                    </div>
+                    <span id="riskTierBadge" class="badge badge-lg">Tier</span>
+                </div>
+
+                <!-- Radial SVG Score Gauge -->
+                <div class="gauge-container">
+                    <svg class="score-gauge" viewBox="0 0 200 130">
+                        <!-- Background Arc -->
+                        <path class="gauge-bg" d="M 25 110 A 75 75 0 0 1 175 110" fill="none" stroke="#22304d" stroke-width="18" stroke-linecap="round" />
+                        <!-- Value Arc -->
+                        <path id="gaugeMeter" class="gauge-meter" d="M 25 110 A 75 75 0 0 1 175 110" fill="none" stroke="#10B981" stroke-width="18" stroke-linecap="round" stroke-dasharray="235.6" stroke-dashoffset="100" />
+                        <!-- Needle Indicator -->
+                        <circle cx="100" cy="110" r="7" fill="#ffffff" />
+                        <line id="gaugeNeedle" x1="100" y1="110" x2="100" y2="40" stroke="#ffffff" stroke-width="3" stroke-linecap="round" transform="rotate(-90 100 110)" />
+                    </svg>
+                    <div class="gauge-display">
+                        <span id="scoreValue" class="score-number">750</span>
+                        <span class="score-scale">/ 850 FICO Range</span>
+                    </div>
+                </div>
+
+                <!-- Decision Alert Box -->
+                <div id="decisionBanner" class="decision-banner banner-approved">
+                    <div class="decision-header">
+                        <div class="decision-icon" id="decisionIcon"><i class="fa-solid fa-circle-check"></i></div>
+                        <div>
+                            <div class="decision-status" id="decisionText">Approved</div>
+                            <div class="decision-subtext" id="decisionSummary">Prime applicant meeting automated underwriting standards.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Key Metrics Grid -->
+                <div class="metric-tiles">
+                    <div class="tile">
+                        <span class="tile-label">Default Probability</span>
+                        <span class="tile-val" id="pdValue">12.5%</span>
+                    </div>
+                    <div class="tile">
+                        <span class="tile-label">Suggested APR</span>
+                        <span class="tile-val text-accent" id="aprValue">6.25%</span>
+                    </div>
+                    <div class="tile">
+                        <span class="tile-label">Approved Max Limit</span>
+                        <span class="tile-val text-success" id="limitValue">4,500 DM</span>
+                    </div>
+                    <div class="tile">
+                        <span class="tile-label">Cost Optimization</span>
+                        <span class="tile-val text-info" id="costDecision">Passed (&tau;*)</span>
+                    </div>
+                </div>
+
+                <!-- Decision Justification: Top Drivers vs Risk Flags -->
+                <div class="justification-section">
+                    <div class="justification-grid">
+                        <!-- Positive Factors -->
+                        <div class="factor-column">
+                            <h4 class="factor-header text-success">
+                                <i class="fa-solid fa-circle-arrow-up"></i> Top Credit Enhancers
+                            </h4>
+                            <ul id="positiveDriversList" class="factor-list">
+                                <!-- Populated dynamically -->
+                            </ul>
+                        </div>
+                        <!-- Risk Flags -->
+                        <div class="factor-column">
+                            <h4 class="factor-header text-danger">
+                                <i class="fa-solid fa-circle-arrow-down"></i> Key Risk Flags
+                            </h4>
+                            <ul id="riskFlagsList" class="factor-list">
+                                <!-- Populated dynamically -->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actionable Financial Recommendations -->
+                <div class="recommendations-box">
+                    <h4 class="recs-title"><i class="fa-solid fa-lightbulb"></i> Actionable Financial Guidance & Terms Advice</h4>
+                    <ul id="recsList" class="recs-list">
+                        <!-- Populated dynamically -->
+                    </ul>
+                </div>
+
+                <!-- Interactive "What-If" Scenario Simulation Sandbox -->
+                <div class="whatif-sandbox">
+                    <div class="sandbox-header flex-between">
+                        <div>
+                            <h4 class="sandbox-title"><i class="fa-solid fa-calculator"></i> "What-If" Counterfactual Simulation</h4>
+                            <p class="sandbox-desc">Adjust loan terms to simulate score trajectory and approval chances in real-time.</p>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-info" id="runSimulationBtn">
+                            <i class="fa-solid fa-rotate"></i> Recalculate Scenario
+                        </button>
+                    </div>
+
+                    <div class="sandbox-controls">
+                        <div class="slider-control">
+                            <div class="slider-header flex-between">
+                                <span>Adjust Loan Duration:</span>
+                                <span class="slider-val" id="simDurationVal">24 Months</span>
+                            </div>
+                            <input type="range" id="simDuration" min="6" max="60" step="6" value="24" class="range-slider">
+                        </div>
+
+                        <div class="slider-control">
+                            <div class="slider-header flex-between">
+                                <span>Adjust Loan Amount:</span>
+                                <span class="slider-val" id="simAmountVal">3,000 DM</span>
+                            </div>
+                            <input type="range" id="simAmount" min="500" max="12000" step="250" value="3000" class="range-slider">
+                        </div>
+
+                        <div class="slider-control">
+                            <div class="slider-header flex-between">
+                                <span>Add Guarantor / Co-applicant:</span>
+                                <span class="slider-val" id="simGuarantorVal">None</span>
+                            </div>
+                            <select id="simGuarantor" class="form-control form-control-sm">
+                                <option value="A101">No Guarantor (A101)</option>
+                                <option value="A102">Co-applicant (A102)</option>
+                                <option value="A103">Credit Guarantor (A103)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Simulation Impact Feedback -->
+                    <div id="simDeltaBox" class="sim-delta-box" style="display: none;">
+                        <div class="sim-metric">
+                            <span class="sim-lbl">Simulated Score:</span>
+                            <span id="simScoreValue" class="sim-num">765</span>
+                            <span id="simScoreDelta" class="sim-delta delta-pos">+15 pts</span>
+                        </div>
+                        <div class="sim-metric">
+                            <span class="sim-lbl">Default Risk:</span>
+                            <span id="simPdValue" class="sim-num">10.2%</span>
+                            <span id="simPdDelta" class="sim-delta delta-neg">-2.3%</span>
+                        </div>
+                        <div class="sim-metric">
+                            <span class="sim-lbl">Status:</span>
+                            <span id="simDecisionValue" class="badge badge-success">Approved</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% endblock %}
